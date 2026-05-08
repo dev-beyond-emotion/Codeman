@@ -21,6 +21,44 @@ html.mobile-init .file-browser-panel {
 }
 
 /* ============================================================================
+   Voice Button Visibility (all sizes where desktop button is hidden)
+   Desktop .btn-voice is hidden at max-width: 1023px (styles.css).
+   Show the mobile voice button at all widths where mobile.css is active.
+   Phone-specific sizing overrides are in the 430px section below.
+   ============================================================================ */
+.btn-voice-mobile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: #1a2a3f;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 4px;
+  color: #93c5fd;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.btn-voice-mobile svg {
+  width: 14px;
+  height: 14px;
+}
+
+.btn-voice-mobile:hover {
+  color: var(--text);
+  border-color: rgba(59, 130, 246, 0.5);
+  background: #1e3050;
+}
+
+.btn-voice-mobile.recording {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #ef4444;
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+
+/* ============================================================================
    iOS Zoom Prevention (all mobile/tablet sizes)
    iOS Safari ignores user-scalable=no since iOS 10.
    font-size >= 16px on inputs prevents auto-zoom on focus.
@@ -415,20 +453,10 @@ html.mobile-init .file-browser-panel {
     display: none !important;
   }
 
-  /* Mobile voice input button in toolbar — initially hidden via inline style,
-     shown by VoiceInput._showButtons() clearing the inline display */
+  /* Phone-specific voice button overrides (smaller size, ordering) */
   .btn-voice-mobile {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 26px;
     height: 26px;
-    background: #1a2a3f;
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    border-radius: 4px;
-    color: #93c5fd;
-    cursor: pointer;
-    flex-shrink: 0;
     order: 5; /* Between Run Shell and settings gear */
   }
 
@@ -439,13 +467,6 @@ html.mobile-init .file-browser-panel {
 
   .btn-voice-mobile:active {
     background: #2a3a5f;
-  }
-
-  .btn-voice-mobile.recording {
-    background: rgba(239, 68, 68, 0.25);
-    border-color: rgba(239, 68, 68, 0.6);
-    color: #ef4444;
-    animation: voice-pulse 1.2s ease-in-out infinite;
   }
 
   /* Mobile app settings gear in toolbar - far right */
