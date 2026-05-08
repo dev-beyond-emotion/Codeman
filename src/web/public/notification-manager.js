@@ -69,7 +69,7 @@ class NotificationManager {
     const defaultEventTypes = {
       permission_prompt: { enabled: true, browser: true, audio: true, push: false },
       elicitation_dialog: { enabled: true, browser: true, audio: true, push: false },
-      idle_prompt: { enabled: true, browser: true, audio: false, push: false },
+      idle_prompt: { enabled: true, browser: true, audio: true, push: false },
       stop: { enabled: true, browser: false, audio: false, push: false },
       session_error: { enabled: true, browser: true, audio: false, push: false },
       respawn_cycle: { enabled: true, browser: false, audio: false, push: false },

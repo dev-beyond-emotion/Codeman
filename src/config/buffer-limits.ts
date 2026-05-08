@@ -24,14 +24,14 @@
  * Reduced from 5MB to 2MB for better render performance.
  * Override: CODEMAN_MAX_TERMINAL_BUFFER (bytes)
  */
-export const MAX_TERMINAL_BUFFER_SIZE = parseInt(process.env.CODEMAN_MAX_TERMINAL_BUFFER || '') || 2 * 1024 * 1024;
+export const MAX_TERMINAL_BUFFER_SIZE = parseInt(process.env.CODEMAN_MAX_TERMINAL_BUFFER || '') || 5 * 1024 * 1024; // 5MB default (overridable via env)
 
 /**
  * Size to trim terminal buffer to when max is exceeded.
  * Keeps the most recent portion to preserve context.
  * Override: CODEMAN_TRIM_TERMINAL_TO (bytes)
  */
-export const TRIM_TERMINAL_TO = parseInt(process.env.CODEMAN_TRIM_TERMINAL_TO || '') || 1.5 * 1024 * 1024;
+export const TRIM_TERMINAL_TO = parseInt(process.env.CODEMAN_TRIM_TERMINAL_TO || '') || 4 * 1024 * 1024; // 4MB default (overridable via env)
 
 // ============================================================================
 // Text Output Buffer Limits
