@@ -115,6 +115,7 @@ import {
   registerClipboardRoutes,
   registerOrchestratorRoutes,
   registerWsRoutes,
+  registerUploadRoutes,
 } from './routes/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -654,6 +655,7 @@ export class WebServer extends EventEmitter {
     registerClipboardRoutes(this.app, ctx);
     registerOrchestratorRoutes(this.app, ctx);
     registerWsRoutes(this.app, ctx);
+    registerUploadRoutes(this.app, ctx);
   }
 
   /**

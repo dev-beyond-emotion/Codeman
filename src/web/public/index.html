@@ -309,6 +309,7 @@
         <div class="file-browser-actions">
           <button class="btn-icon-sm" onclick="app.refreshFileBrowser()" title="Refresh">&#x21BB;</button>
           <button class="btn-icon-sm" onclick="app.toggleFileBrowserExpand()" title="Expand/Collapse All" id="fileBrowserExpandBtn">&#x229E;</button>
+          <button class="btn-icon-sm" onclick="app.openFileUploadPicker()" title="Upload files">&#x2B06;</button>
           <button class="btn-icon-sm" onclick="app.closeFileBrowserPanel()" title="Close">&times;</button>
         </div>
       </div>
@@ -317,6 +318,9 @@
       </div>
       <div class="file-browser-body" id="fileBrowserTree">
         <div class="file-browser-empty">Select a session to view files</div>
+      </div>
+      <div class="file-browser-drop-overlay" id="fileBrowserDropOverlay">
+        <div class="drop-overlay-content">Drop files to upload</div>
       </div>
       <div class="file-browser-status" id="fileBrowserStatus"></div>
     </div>
@@ -327,6 +331,7 @@
         <div class="file-preview-header">
           <span class="file-preview-title" id="filePreviewTitle">file.ts</span>
           <div class="file-preview-actions">
+            <button class="btn-icon-sm" onclick="app.downloadPreviewFile()" title="Download">&#x21E9;</button>
             <button class="btn-icon-sm" onclick="app.copyFilePreviewContent()" title="Copy content">&#x2398;</button>
             <button class="btn-icon-sm" onclick="app.closeFilePreview()" title="Close">&times;</button>
           </div>
@@ -1804,5 +1809,6 @@
   <script defer src="ralph-wizard.js"></script>
   <script defer src="api-client.js"></script>
   <script defer src="subagent-windows.js"></script>
+  <script defer src="file-upload.js"></script>
 </body>
 </html>

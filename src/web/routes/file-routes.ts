@@ -305,6 +305,10 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort): void
         return;
       }
       reply.header('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+      if (download === 'true') {
+        const fileName = filePath!.split('/').pop() || 'download';
+        reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
+      }
       reply.send(content);
     } catch (err) {
       reply

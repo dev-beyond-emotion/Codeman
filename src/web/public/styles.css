@@ -6655,6 +6655,82 @@ kbd {
   font-size: 0.75rem;
 }
 
+/* File Upload: Drop Zone */
+.file-browser-panel.file-drop-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.file-browser-drop-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.6);
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.file-browser-panel.file-drop-active .file-browser-drop-overlay {
+  display: flex;
+}
+
+.drop-overlay-content {
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+}
+
+/* File Upload: Progress Bar */
+.upload-progress {
+  display: inline-block;
+  width: 60%;
+  height: 4px;
+  background: var(--bg-dark);
+  border-radius: 2px;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: 0.4rem;
+}
+
+.upload-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
+
+/* File Upload: Context Menu */
+.file-tree-context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  padding: 0.25rem 0;
+  min-width: 140px;
+}
+
+.context-menu-item {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.context-menu-item:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
 /* File Tree Item */
 .file-tree-item {
   display: flex;
