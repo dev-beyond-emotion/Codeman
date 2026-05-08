@@ -638,10 +638,10 @@ class CodemanApp {
       { key: 'w', ctrl: true, action: () => this.killActiveSession() },
       { key: 'Tab', ctrl: true, action: () => this.nextSession() },
       { key: 'l', ctrl: true, action: () => this.clearTerminal() },
-      { key: 'R', ctrl: true, shift: true, action: () => this.restoreTerminalSize() },
+      { key: 'T', ctrl: true, shift: true, action: () => this.restoreTerminalSize() },
       { key: '=', altKey: '+', ctrl: true, action: () => this.increaseFontSize() },
       { key: '-', ctrl: true, action: () => this.decreaseFontSize() },
-      { key: 'V', ctrl: true, shift: true, action: () => VoiceInput.toggle() },
+      { key: 'M', ctrl: true, shift: true, action: () => VoiceInput.toggle() },
       { key: '{', ctrl: true, shift: true, action: () => this.moveActiveTabLeft() },
       { key: '}', ctrl: true, shift: true, action: () => this.moveActiveTabRight() },
     ];

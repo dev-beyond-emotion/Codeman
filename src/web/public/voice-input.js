@@ -8,7 +8,7 @@
  *   auto-detects MIME type (opus/webm/mp4), and supports custom key terms for dev vocabulary.
  *
  * - VoiceInput — High-level voice input controller. Toggle mode: tap mic to start, tap
- *   again to stop. Auto-stops after 3s silence. Shows floating preview overlay with recording
+ *   again to stop. Auto-stops after 2s silence. Shows floating preview overlay with recording
  *   indicator, level meter (AnalyserNode), and elapsed timer. Two insert modes: "direct"
  *   (inject into local echo overlay or PTY) and "compose" (editable textarea overlay).
  *   Includes a temporary green Send button that replaces the settings gear icon after voice input.
@@ -38,11 +38,11 @@ const DeepgramProvider = {
   _ws: null,
   _mediaRecorder: null,
   _stream: null,
-  _silenceTimeout: null,
   _keepAliveInterval: null,
   _onResult: null,
   _onError: null,
   _onEnd: null,
+  _stopping: false,
 
   /**
    * Start streaming audio to Deepgram.
@@ -88,11 +88,13 @@ const DeepgramProvider = {
 
     const params = new URLSearchParams({
       model: 'nova-3',
-      smart_format: 'false',
-      punctuate: 'false',
+      smart_format: 'true',
+      punctuate: 'true',
       interim_results: 'true',
-      utterance_end_ms: '1500',
+      endpointing: '1000',
+      utterance_end_ms: '3000',
       vad_events: 'true',
+      mip_opt_out: 'true',
     });
     if (opts.language && opts.language !== 'multi') {
       params.set('language', opts.language);
@@ -123,13 +125,13 @@ const DeepgramProvider = {
     }
 
     this._ws.onopen = () => {
-      // 5. Send KeepAlive every 8s to prevent Deepgram from closing idle connections
+      // 5. Send KeepAlive every 3s to prevent Deepgram from closing idle connections
       // (covers the gap before MediaRecorder produces its first chunk)
       this._keepAliveInterval = setInterval(() => {
         if (this._ws?.readyState === WebSocket.OPEN) {
           try { this._ws.send(JSON.stringify({ type: 'KeepAlive' })); } catch (_e) { /* ignore */ }
         }
-      }, 8000);
+      }, 3000);
       // 6. Start MediaRecorder once connected
       this._startRecording();
     };
@@ -140,10 +142,10 @@ const DeepgramProvider = {
         if (data.type === 'Results' && data.channel?.alternatives?.[0]) {
           const alt = data.channel.alternatives[0];
           const transcript = alt.transcript || '';
+          const isFinal = data.is_final === true;
+          const speechFinal = data.speech_final === true;
           if (transcript) {
-            const isFinal = data.is_final === true;
-            this._onResult?.(transcript, isFinal);
-            this._resetSilenceTimeout();
+            this._onResult?.(transcript, isFinal, speechFinal);
           }
         }
       } catch (_e) {
@@ -158,6 +160,8 @@ const DeepgramProvider = {
     this._ws.onclose = (event) => {
       clearInterval(this._keepAliveInterval);
       this._keepAliveInterval = null;
+      // During graceful shutdown, _finalCleanup handles everything
+      if (this._stopping) return;
       if (event.code === 1008) {
         this._onError?.('Authentication failed. Check your Deepgram API key in Settings > Voice.');
       } else if (event.code === 1006) {
@@ -166,7 +170,10 @@ const DeepgramProvider = {
       } else if (event.code !== 1000) {
         this._onError?.('Deepgram connection closed: ' + (event.reason || `code ${event.code}`));
       }
-      this._stopRecording();
+      this._stopMicTracks();
+      if (this._mediaRecorder && this._mediaRecorder.state !== 'inactive') {
+        try { this._mediaRecorder.stop(); } catch (_e) { /* already stopped */ }
+      }
       this._onEnd?.();
     };
   },
@@ -190,54 +197,121 @@ const DeepgramProvider = {
     };
 
     this._mediaRecorder.start(250); // Send chunks every 250ms
-    this._resetSilenceTimeout();
   },
 
-  _stopRecording() {
-    if (this._mediaRecorder && this._mediaRecorder.state !== 'inactive') {
-      try { this._mediaRecorder.stop(); } catch (_e) { /* already stopped */ }
+  /**
+   * Graceful shutdown: drain final audio -> CloseStream -> wait for results -> cleanup.
+   * Phase 1: MediaRecorder.stop() -> wait for final ondataavailable
+   * Phase 2: Send CloseStream so Deepgram processes buffered audio
+   * Phase 3: Wait for final Results + Metadata (max 3s timeout)
+   * Then: handlers nulled, WebSocket closed, onEnd fired
+   */
+  async stop() {
+    if (this._stopping) return;
+    this._stopping = true;
+    clearInterval(this._keepAliveInterval);
+    this._keepAliveInterval = null;
+
+    // Phase 1: Wait for MediaRecorder to flush final audio chunk
+    await this._waitForRecorderStop();
+    this._stopMicTracks();
+
+    // Phase 2: Send CloseStream so Deepgram processes all buffered audio
+    if (this._ws?.readyState === WebSocket.OPEN) {
+      try { this._ws.send(JSON.stringify({ type: 'CloseStream' })); } catch (_e) { /* ignore */ }
     }
-    // Stop all mic tracks
+
+    // Phase 3: Wait for final Results + Metadata (max 3s timeout)
+    await new Promise(resolve => {
+      if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
+        resolve();
+        return;
+      }
+      const timeout = setTimeout(resolve, 3000);
+      const origOnMessage = this._ws.onmessage;
+      this._ws.onmessage = (event) => {
+        // Forward results to VoiceInput during drain
+        if (origOnMessage) origOnMessage.call(this._ws, event);
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'Metadata') {
+            clearTimeout(timeout);
+            resolve();
+          }
+        } catch (_e) { /* ignore */ }
+      };
+    });
+
+    // Done draining — cleanup and notify
+    this._finalCleanup();
+  },
+
+  /** Promise-based wait for MediaRecorder.stop() to flush final audio chunk */
+  _waitForRecorderStop() {
+    return new Promise(resolve => {
+      if (!this._mediaRecorder || this._mediaRecorder.state === 'inactive') {
+        resolve();
+        return;
+      }
+      const timeout = setTimeout(resolve, 1000); // Safety: max 1s wait
+      this._mediaRecorder.onstop = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+      try {
+        this._mediaRecorder.stop();
+      } catch (_e) {
+        clearTimeout(timeout);
+        resolve();
+      }
+    });
+  },
+
+  /** Stop all microphone tracks */
+  _stopMicTracks() {
     if (this._stream) {
       this._stream.getTracks().forEach(t => t.stop());
     }
   },
 
-  _resetSilenceTimeout() {
-    clearTimeout(this._silenceTimeout);
-    this._silenceTimeout = setTimeout(() => {
-      this.stop();
-    }, 3000);
-  },
-
-  stop() {
-    clearTimeout(this._silenceTimeout);
-    this._silenceTimeout = null;
-    clearInterval(this._keepAliveInterval);
-    this._keepAliveInterval = null;
-    this._stopRecording();
-    // Detach WS handlers before closing to prevent stale onclose from
-    // killing a subsequent recording that starts before the close completes
+  /** Final WS cleanup + fire onEnd callback */
+  _finalCleanup() {
     if (this._ws) {
       this._ws.onclose = null;
       this._ws.onmessage = null;
       this._ws.onerror = null;
-      if (this._ws.readyState === WebSocket.OPEN) {
+      if (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING) {
         try { this._ws.close(1000); } catch (_e) { /* ignore */ }
       }
       this._ws = null;
     }
-    // Save onEnd before nulling — must notify VoiceInput when silence timeout
-    // triggers stop internally (VoiceInput.onEnd guards with isRecording check)
     const onEnd = this._onEnd;
     this._onResult = null;
     this._onError = null;
     this._onEnd = null;
+    this._stopping = false;
     onEnd?.();
   },
 
+  /** Hard cleanup for error paths (no drain) */
   _cleanup() {
-    this.stop();
+    this._stopping = false;
+    clearInterval(this._keepAliveInterval);
+    this._keepAliveInterval = null;
+    if (this._mediaRecorder && this._mediaRecorder.state !== 'inactive') {
+      try { this._mediaRecorder.stop(); } catch (_e) { /* */ }
+    }
+    this._stopMicTracks();
+    if (this._ws) {
+      this._ws.onclose = null;
+      this._ws.onmessage = null;
+      this._ws.onerror = null;
+      try { this._ws.close(1000); } catch (_e) { /* */ }
+      this._ws = null;
+    }
+    this._onResult = null;
+    this._onError = null;
+    this._onEnd = null;
     this._mediaRecorder = null;
     this._stream = null;
     this._selectedMime = null;
@@ -268,6 +342,8 @@ const VoiceInput = {
   _analyserSource: null, // MediaStreamSource for level meter
   _audioContext: null, // AudioContext for level meter
   _levelAnimFrame: null, // rAF handle for level meter
+  _draining: false, // DeepgramProvider is draining final results
+  _textInserted: false, // guard against double text insertion
 
   init() {
     this._initRecognition();
@@ -333,6 +409,8 @@ const VoiceInput = {
       return;
     }
     this._retryCount = 0;
+    this._textInserted = false;
+    this._draining = false;
 
     if (this._shouldUseDeepgram()) {
       this._startDeepgram();
@@ -363,17 +441,30 @@ const VoiceInput = {
       onStream: (stream) => {
         this._startLevelMeter(stream);
       },
-      onResult: (text, isFinal) => {
-        if (!this.isRecording) return;
+      onResult: (text, isFinal, speechFinal) => {
+        if (!this.isRecording && !this._draining) return;
         this._hasReceivedResult = true;
         if (isFinal) {
+          // Add space between consecutive is_final segments (Deepgram does not include leading spaces)
+          if (this._accumulatedFinal && !this._accumulatedFinal.endsWith(" ") && text && !text.startsWith(" ")) {
+            this._accumulatedFinal += " ";
+          }
           this._accumulatedFinal += text;
-          this._hidePreview();
-          this._insertText(this._accumulatedFinal);
-          this.stop();
+          if (speechFinal) {
+            // Utterance boundary — add space to separate from next utterance
+            this._accumulatedFinal += ' ';
+          }
+          // Preview + Silence-Reset only when actively recording (not during drain)
+          if (this.isRecording) {
+            this._showPreview(this._accumulatedFinal, 'deepgram');
+            this._resetSilenceTimeout();
+          }
         } else {
-          const display = this._accumulatedFinal + text;
-          this._showPreview(display, 'deepgram');
+          if (this.isRecording) {
+            const display = this._accumulatedFinal + (this._accumulatedFinal && !this._accumulatedFinal.endsWith(' ') && text && !text.startsWith(' ') ? ' ' : '') + text;
+            this._showPreview(display, 'deepgram');
+            this._resetSilenceTimeout();
+          }
         }
       },
       onError: (msg) => {
@@ -382,12 +473,7 @@ const VoiceInput = {
         if (wasRecording) app.showToast(msg, 'error');
       },
       onEnd: () => {
-        if (this.isRecording) {
-          if (this._accumulatedFinal) {
-            this._insertText(this._accumulatedFinal);
-          }
-          this.stop();
-        }
+        this._finalize();
       }
     });
 
@@ -453,7 +539,8 @@ const VoiceInput = {
     this._hidePreview();
 
     if (this._activeProvider === 'deepgram') {
-      DeepgramProvider.stop();
+      this._draining = true;
+      DeepgramProvider.stop(); // async — onEnd calls _finalize() when drain completes
     } else if (this._activeProvider === 'webspeech') {
       try {
         this.recognition?.stop();
@@ -470,6 +557,29 @@ const VoiceInput = {
 
     // Haptic feedback on mobile
     if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+  },
+
+  /** Single point of text insertion — called after Deepgram drain completes or on unexpected end */
+  _finalize() {
+    this._draining = false;
+    if (this._accumulatedFinal && !this._textInserted) {
+      this._insertText(this._accumulatedFinal);
+    }
+    // If called from unexpected WS close (isRecording still true), clean up UI
+    if (this.isRecording) {
+      this.isRecording = false;
+      clearTimeout(this.silenceTimeout);
+      clearTimeout(this._stabilityTimer);
+      this.silenceTimeout = null;
+      this._stabilityTimer = null;
+      this._retryCount = 0;
+      this._stopDurationTimer();
+      this._stopLevelMeter();
+      this._updateButtons('idle');
+      this._hidePreview();
+      this._activeProvider = null;
+      if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+    }
   },
 
   _onWebSpeechResult(event) {
@@ -489,9 +599,9 @@ const VoiceInput = {
 
     if (finalText) {
       this._accumulatedFinal += finalText;
-      this._hidePreview();
-      this._insertText(this._accumulatedFinal);
-      this.stop();
+      // Show accumulated text in preview — do NOT stop, let silence timeout handle stop
+      this._showPreview(this._accumulatedFinal);
+      this._resetSilenceTimeout();
     } else if (interim) {
       const display = this._accumulatedFinal + interim;
       this._showPreview(display);
@@ -546,7 +656,16 @@ const VoiceInput = {
       return;
     }
 
-    // Genuine end — finalize any accumulated text
+    // Genuine end — browser auto-stopped recognition (common in Chrome)
+    // Auto-restart if user hasn't explicitly stopped (silence timeout handles final stop)
+    if (this.isRecording && this._hasReceivedResult) {
+      try {
+        this.recognition.start();
+        return;
+      } catch (_e) {
+        // If restart fails, fall through to finalize
+      }
+    }
     if (this._accumulatedFinal) {
       this._insertText(this._accumulatedFinal);
     }
@@ -554,6 +673,8 @@ const VoiceInput = {
   },
 
   _insertText(text) {
+    if (this._textInserted) return;
+    this._textInserted = true;
     if (!app.activeSessionId || !text.trim()) return;
     const trimmed = text.trim();
     const mode = this._getDeepgramConfig().insertMode || 'direct';
@@ -677,13 +798,9 @@ const VoiceInput = {
     clearTimeout(this.silenceTimeout);
     this.silenceTimeout = setTimeout(() => {
       if (this.isRecording) {
-        // Finalize any accumulated text before stopping
-        if (this._accumulatedFinal) {
-          this._insertText(this._accumulatedFinal);
-        }
         this.stop();
       }
-    }, 3000);
+    }, 2000);
   },
 
   _iosStabilityCheck(transcript) {
@@ -857,6 +974,8 @@ const VoiceInput = {
   cleanup() {
     if (this.isRecording) this.stop();
     this._hideVoiceSendBtn();
+    this._draining = false;
+    this._textInserted = false;
     DeepgramProvider._cleanup();
     this.recognition = null;
     this._activeProvider = null;
